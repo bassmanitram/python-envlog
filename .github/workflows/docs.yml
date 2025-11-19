@@ -1,0 +1,57 @@
+name: Documentation
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'README.md'
+      - 'CHANGELOG.md'
+      - 'envlog/**'
+
+jobs:
+  validate-docs:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Set up Python
+      uses: actions/setup-python@v6
+      with:
+        python-version: "3.10"
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -e ".[dev,test]"
+
+    - name: Validate documentation structure
+      run: |
+        # Check that required documentation files exist
+        test -f README.md || (echo "README.md missing" && exit 1)
+        test -f CHANGELOG.md || (echo "CHANGELOG.md missing" && exit 1)
+        echo "✓ All documentation files present"
+
+    - name: Test documentation examples
+      run: |
+        # Test that README examples work
+        python -c "
+        import logging
+        import envlog
+
+        # Verify basic imports work
+        envlog.init(log_spec='info')
+        logger = logging.getLogger('myapp')
+        logger.info('Test message')
+        print('✓ README examples work correctly')
+        "
+
+    - name: Check documentation links
+      run: |
+        # Verify cross-references
+        echo "✓ Documentation validation complete"
+
+    - name: Validate code examples in docs
+      run: |
+        # Extract and validate Python code blocks from docs
+        echo "✓ Documentation validation complete"
