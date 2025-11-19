@@ -66,12 +66,14 @@ class TestIntegration:
 
     def test_complex_configuration(self):
         """Test complex multi-module configuration."""
-        spec = "warn,app=info,app.core=debug,app.db=trace,lib1=error,lib2.special=debug"
+        spec = "warn,app=info,app.core=debug,app.db=trace," "lib1=error,lib2.special=debug"
         init(log_spec=spec)
 
         assert logging.getLogger("app").level == logging.INFO
         assert logging.getLogger("app.core").level == logging.DEBUG
-        assert logging.getLogger("app.db").level == logging.DEBUG  # trace->DEBUG
+        # trace->DEBUG
+        assert logging.getLogger("app.db").level == logging.DEBUG
         assert logging.getLogger("lib1").level == logging.ERROR
         assert logging.getLogger("lib2.special").level == logging.DEBUG
-        assert logging.getLogger("other").getEffectiveLevel() == logging.WARNING
+        other_level = logging.getLogger("other").getEffectiveLevel()
+        assert other_level == logging.WARNING

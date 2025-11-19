@@ -21,7 +21,8 @@ class TestBuildDictConfig:
 
     def test_module_levels(self):
         spec = LogSpec(
-            default_level="WARNING", module_levels={"myapp": "DEBUG", "otherlib": "ERROR"}
+            default_level="WARNING",
+            module_levels={"myapp": "DEBUG", "otherlib": "ERROR"},
         )
         config = build_dict_config(spec)
 
@@ -33,10 +34,13 @@ class TestBuildDictConfig:
     def test_custom_format(self):
         spec = LogSpec()
         config = build_dict_config(
-            spec, log_format="%(name)s - %(message)s", date_format="%Y-%m-%d"
+            spec,
+            log_format="%(name)s - %(message)s",
+            date_format="%Y-%m-%d",
         )
 
-        assert config["formatters"]["standard"]["format"] == "%(name)s - %(message)s"
+        fmt = config["formatters"]["standard"]["format"]
+        assert fmt == "%(name)s - %(message)s"
         assert config["formatters"]["standard"]["datefmt"] == "%Y-%m-%d"
 
 
