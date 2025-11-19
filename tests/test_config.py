@@ -3,8 +3,6 @@
 import logging
 import os
 
-import pytest
-
 from envlog.config import build_dict_config, init, reset
 from envlog.parser import LogSpec
 

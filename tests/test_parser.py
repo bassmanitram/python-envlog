@@ -2,7 +2,7 @@
 
 import pytest
 
-from envlog.parser import LogSpec, normalize_level, parse_log_spec
+from envlog.parser import normalize_level, parse_log_spec
 
 
 class TestNormalizeLevel:

@@ -3,8 +3,6 @@
 import logging
 import os
 
-import pytest
-
 from envlog import init, reset
 
 
