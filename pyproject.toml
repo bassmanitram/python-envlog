@@ -7,7 +7,7 @@ name = "envlog"
 version = "0.1.0"
 description = "Rust RUST_LOG-style environment variable configuration for Python logging"
 readme = "README.md"
-requires-python = ">=3.7"
+requires-python = ">=3.8"
 license = {text = "MIT"}
 authors = [
     {name = "Martin Bartlett", email = "martin.j.bartlett@gmail.com"}
@@ -19,7 +19,6 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.7",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -82,7 +81,7 @@ exclude_lines = [
 
 [tool.black]
 line-length = 100
-target-version = ['py37']
+target-version = ['py38']
 
 [tool.isort]
 profile = "black"

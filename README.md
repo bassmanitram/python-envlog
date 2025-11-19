@@ -10,6 +10,10 @@ Rust RUST_LOG-style environment variable configuration for Python's standard lib
 - **Zero dependencies**: Only uses Python standard library
 - **Flexible**: Works with loggers created anywhere in your codebase
 
+## Requirements
+
+- Python 3.8 or higher
+
 ## Installation
 
 ```bash
