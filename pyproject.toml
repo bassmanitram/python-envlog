@@ -29,9 +29,9 @@ classifiers = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/bassmanitram/envlog"
-Repository = "https://github.com/bassmanitram/envlog.git"
-"Bug Tracker" = "https://github.com/bassmanitram/envlog/issues"
+Homepage = "https://github.com/bassmanitram/python-envlog"
+Repository = "https://github.com/bassmanitram/python-envlog.git"
+"Bug Tracker" = "https://github.com/bassmanitram/python-envlog/issues"
 
 [project.optional-dependencies]
 test = [

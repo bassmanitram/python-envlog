@@ -1,7 +1,7 @@
 # envlog
 
-[![Tests](https://github.com/bassmanitram/envlog/workflows/Test/badge.svg?branch=main)](https://github.com/bassmanitram/envlog/actions/workflows/test.yml)
-[![Lint](https://github.com/bassmanitram/envlog/workflows/Lint/badge.svg?branch=main)](https://github.com/bassmanitram/envlog/actions/workflows/lint.yml)
+[![Tests](https://github.com/bassmanitram/python-envlog/workflows/Test/badge.svg?branch=main)](https://github.com/bassmanitram/python-envlog/actions/workflows/test.yml)
+[![Lint](https://github.com/bassmanitram/python-envlog/workflows/Lint/badge.svg?branch=main)](https://github.com/bassmanitram/python-envlog/actions/workflows/lint.yml)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://badge.fury.io/py/envlog.svg)](https://badge.fury.io/py/envlog)
 
@@ -203,7 +203,7 @@ The logging configuration uses:
 
 ```bash
 # Clone repository
-git clone https://github.com/bassmanitram/envlog.git
+git clone https://github.com/bassmanitram/python-envlog.git
 cd envlog
 
 # Install in development mode
