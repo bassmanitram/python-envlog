@@ -39,7 +39,7 @@ jobs:
         import envlog
         import os
         os.environ['PTHN_LOG'] = 'debug'
-        envlog.configure()
+        envlog.init()
         logger = logging.getLogger('test')
         logger.debug('Debug message')
         print('✓ Basic usage works')
@@ -52,7 +52,7 @@ jobs:
         import envlog
         import os
         os.environ['PTHN_LOG'] = 'info,requests=warning,urllib3=error'
-        envlog.configure()
+        envlog.init()
         logger = logging.getLogger('test')
         logger.info('Info message')
         print('✓ Logger configuration works')
