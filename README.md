@@ -7,8 +7,6 @@
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://img.shields.io/pypi/v/envlog.svg)](https://pypi.org/project/envlog/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
-[![PyPI version](https://badge.fury.io/py/envlog.svg)](https://badge.fury.io/py/envlog)
 
 Rust RUST_LOG-style environment variable configuration for Python's standard library logging.
 
