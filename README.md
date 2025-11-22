@@ -1,7 +1,12 @@
-# envlog
+# Envlog
 
-[![Tests](https://github.com/bassmanitram/python-envlog/workflows/Test/badge.svg?branch=main)](https://github.com/bassmanitram/python-envlog/actions/workflows/test.yml)
-[![Lint](https://github.com/bassmanitram/python-envlog/workflows/Lint/badge.svg?branch=main)](https://github.com/bassmanitram/python-envlog/actions/workflows/lint.yml)
+[![Tests](https://github.com/bassmanitram/python-envlog/actions/workflows/test.yml/badge.svg)](https://github.com/bassmanitram/python-envlog/actions/workflows/test.yml)
+[![Lint](https://github.com/bassmanitram/python-envlog/actions/workflows/lint.yml/badge.svg)](https://github.com/bassmanitram/python-envlog/actions/workflows/lint.yml)
+[![Code Quality](https://github.com/bassmanitram/python-envlog/actions/workflows/quality.yml/badge.svg)](https://github.com/bassmanitram/python-envlog/actions/workflows/quality.yml)
+[![Examples](https://github.com/bassmanitram/python-envlog/actions/workflows/examples.yml/badge.svg)](https://github.com/bassmanitram/python-envlog/actions/workflows/examples.yml)
+[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![PyPI version](https://img.shields.io/pypi/v/envlog.svg)](https://pypi.org/project/envlog/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://badge.fury.io/py/envlog.svg)](https://badge.fury.io/py/envlog)
 
