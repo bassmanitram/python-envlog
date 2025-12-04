@@ -227,6 +227,18 @@ MIT License - see LICENSE file for details
 
 Contributions welcome! Please open an issue or pull request.
 
+### For Developers and AI Agents
+
+See [AGENT_BOOTSTRAP.md](AGENT_BOOTSTRAP.md) for comprehensive project documentation including:
+- Complete architecture overview
+- Module-by-module code walkthrough
+- Testing strategies and guidelines
+- CI/CD pipeline details
+- Development workflow and conventions
+- Design decisions and rationale
+
+This document provides the technical context needed to understand and contribute to the project effectively.
+
 ## Acknowledgments
 
 Inspired by Rust's `env_logger` crate and the RUST_LOG convention.
