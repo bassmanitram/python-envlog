@@ -1,815 +1,268 @@
-# Agent Bootstrap - envlog Project
+# envlog - Agent Bootstrap
 
-**Generated**: 2025-11-22  
-**Project**: envlog - Rust RUST_LOG-style environment variable configuration for Python logging  
-**Version**: 0.1.0  
+**Purpose**: Configure Python logging via environment variables using Rust's RUST_LOG syntax  
+**Type**: Library  
+**Language**: Python 3.8+  
 **Repository**: https://github.com/bassmanitram/python-envlog
 
 ---
 
-## Project Overview
+## What You Need to Know
 
-### Purpose
-`envlog` is a Python library that provides Rust's `RUST_LOG`-style environment variable configuration for Python's standard library logging. It allows developers to configure logging hierarchies using a simple environment variable syntax (e.g., `PTHN_LOG=warn,myapp=debug`) instead of complex dictConfig or code-based configuration.
+**This is**: A zero-dependency Python library that translates Rust-style environment variable logging configuration (`PTHN_LOG=warn,myapp=debug`) into Python's standard library `logging.config.dictConfig` calls. It eliminates the need for code-based logging setup or complex JSON/YAML configuration files.
 
-### Key Features
-- Single environment variable controls all logging
-- Familiar Rust `RUST_LOG` syntax
-- Zero external dependencies (stdlib only)
-- Module-specific log level configuration
-- Hierarchical logger support
-- Works with loggers created anywhere in codebase
+**Architecture in one sentence**: Parser (string → structured config) → Builder (structured config → dictConfig dict) → Applicator (dictConfig → logging module side effects).
 
-### Target Audience
-Python developers familiar with Rust's logging conventions, or anyone wanting simpler logging configuration through environment variables.
+**The ONE constraint that must not be violated**: The parser must remain a pure function with no side effects - all logging state modification happens only in `config.py:init()`.
 
 ---
 
-## Project Structure
+## Mental Model
+
+- Think of this as a **translator**: Rust syntax in, Python logging configuration out
+- Three independent stages: **parse** text → **build** dictionary → **apply** to logging
+- Parser stage is pure (testable in isolation), application stage has side effects (configures global logging)
+- Configuration happens **once** at application startup (protected by `_configured` flag)
+- Module-specific levels override default level (hierarchical: `myapp.core` inherits from `myapp`)
+
+---
+
+## Codebase Organization
 
 ```
 envlog/
-├── envlog/                    # Main package (289 lines)
-│   ├── __init__.py           # Public API exports (12 lines)
-│   ├── parser.py             # RUST_LOG syntax parser (138 lines)
-│   └── config.py             # Logging configuration builder (139 lines)
-├── tests/                     # Test suite (316 lines, 37 tests, 97% coverage)
-│   ├── test_parser.py        # Parser tests (108 lines)
-│   ├── test_config.py        # Config builder tests (129 lines)
-│   └── test_integration.py   # End-to-end tests (79 lines)
-├── .github/workflows/         # CI/CD workflows (8 workflows)
-│   ├── test.yml              # Multi-platform/version testing
-│   ├── lint.yml              # Code quality (black, isort, mypy)
-│   ├── quality.yml           # Pre-commit, security, build validation
-│   ├── examples.yml          # Example code validation
-│   ├── docs.yml              # Documentation validation
-│   ├── dependencies.yml      # Weekly dependency checks
-│   ├── status.yml            # Daily health checks
-│   └── release.yml           # PyPI release automation
-├── pyproject.toml            # Project metadata and tool config
-├── setup.py                  # Build configuration (minimal)
-├── example.py                # Usage examples
-├── README.md                 # Main documentation
-├── GETTING_STARTED.md        # Quick start guide
-├── CHANGELOG.md              # Version history
-├── LICENSE                   # MIT License
-└── .pre-commit-config.yaml   # Pre-commit hooks configuration
+├── parser.py      # Pure functions: string parsing, level normalization, validation
+├── config.py      # Side effects: dictConfig building, logging initialization, state tracking
+├── __init__.py    # Public API surface: init(), reset(), parse_log_spec()
+└── tests/         # Unit tests (parser, config) + integration tests (full pipeline)
 ```
 
-**Important**: Avoid `.venv/` directory - it's large and contains only virtual environment files.
+**Navigation Guide**:
+
+| When you need to... | Start here | Why |
+|---------------------|------------|-----|
+| Add new log level mapping | `parser.py` → `LEVEL_MAP` | All level translations defined here |
+| Change syntax parsing | `parser.py` → `parse_log_spec()` | Regex and validation logic |
+| Modify logging config structure | `config.py` → `build_dict_config()` | dictConfig dictionary construction |
+| Fix initialization behavior | `config.py` → `init()` | State management and application logic |
+| Understand end-to-end flow | `tests/test_integration.py` | Shows full pipeline with real logging |
+
+**Entry points**:
+- Main execution: `envlog.init()` - Reads env var or accepts string, configures logging
+- Tests: `tests/` - Organized by module (parser, config, integration)
+- Configuration: Environment variables only (no config files)
 
 ---
 
-## Core Architecture
+## Critical Invariants
 
-### Module Breakdown
+These rules MUST be maintained:
 
-#### 1. **`envlog.parser`** (138 lines)
-Parses RUST_LOG-style specifications into structured `LogSpec` objects.
+1. **Parser purity**: `parser.py` functions have no side effects
+   - **Why**: Enables testing without mocking, allows reuse in other contexts
+   - **Breaks if violated**: Tests become flaky, parsing becomes order-dependent
+   - **Enforced by**: Code review, tests don't mock anything in parser
 
-**Key Components**:
-- `LEVEL_MAP`: Dict mapping Rust level names to Python level names
-  - `trace` → `DEBUG` (Rust's trace is more verbose, maps to Python's lowest)
-  - `debug` → `DEBUG`
-  - `info` → `INFO`
-  - `warn`/`warning` → `WARNING`
-  - `error` → `ERROR`
-  - `critical` → `CRITICAL`
-  - `off` → `CRITICAL`
+2. **Single initialization per process**: `init()` configures logging once unless `force=True`
+   - **Why**: Prevents accidental reconfiguration, matches logging module semantics
+   - **Breaks if violated**: Logging behavior becomes unpredictable, configurations override each other
+   - **Enforced by**: `_configured` module-level flag in `config.py`
 
-- `LogSpec` class: Dataclass-like object holding:
-  - `default_level`: Global log level (default: WARNING)
-  - `module_levels`: Dict[str, str] mapping module names to levels
-
-- `normalize_level(level: str) -> str`: Converts level strings to Python level names
-- `parse_log_spec(spec: str) -> LogSpec`: Main parser function
-
-**Syntax Supported**:
-```
-info                              # Default level only
-myapp=debug                       # Module-specific level
-warn,myapp=debug                  # Default + module override
-myapp.submodule=trace             # Hierarchical modules
-myapp::core=debug                 # Rust :: separator (converted to .)
-warn,myapp=debug,other=error      # Multiple overrides
-```
-
-**Validation**:
-- Module names must match: `^[a-zA-Z_][a-zA-Z0-9_]*(\.[a-zA-Z_][a-zA-Z0-9_]*)*$`
-- Only one default level allowed
-- All level names must be valid
-
-#### 2. **`envlog.config`** (139 lines)
-Builds `logging.config.dictConfig` configurations and manages initialization state.
-
-**Key Components**:
-- `_configured`: Global flag preventing double-initialization
-- `build_dict_config(spec, log_format, date_format) -> Dict`: Generates dictConfig dict
-- `init(log_spec, env_var, log_format, date_format, force)`: Main initialization function
-- `reset()`: Clears `_configured` flag
-
-**Configuration Structure**:
-- Uses `StreamHandler` writing to `sys.stderr`
-- Default format: `%(asctime)s [%(levelname)8s] %(name)s: %(message)s`
-- Default date format: `%Y-%m-%d %H:%M:%S`
-- Sets `disable_existing_loggers: False` (non-destructive)
-- Creates module-specific loggers with `propagate: False`
-
-**Initialization Flow**:
-1. Check `_configured` flag (skip if set and `force=False`)
-2. Read spec from `log_spec` parameter OR environment variable
-3. Parse spec string into `LogSpec` object
-4. Build dictConfig dictionary
-5. Apply via `logging.config.dictConfig()`
-6. Set `_configured = True`
-7. Log configuration to 'envlog' logger at DEBUG level
-
-#### 3. **`envlog.__init__`** (12 lines)
-Public API surface. Exports only:
-- `init()` - Initialize logging
-- `reset()` - Reset configuration state
-- `parse_log_spec()` - Parse spec (for testing/advanced use)
-
-**Version**: 0.1.0
+3. **Zero runtime dependencies**: Only Python stdlib imports allowed
+   - **Why**: Core project goal - be universally deployable
+   - **Breaks if violated**: Project loses its primary value proposition
+   - **Enforced by**: `pyproject.toml` has empty `dependencies = []`
 
 ---
 
-## Public API
+## Non-Obvious Behaviors & Gotchas
 
-### `envlog.init()`
-```python
-def init(
-    log_spec: Optional[str] = None,
-    env_var: str = 'PTHN_LOG',
-    log_format: Optional[str] = None,
-    date_format: Optional[str] = None,
-    force: bool = False
-) -> None
-```
+Things that surprise people:
 
-**Purpose**: Initialize Python logging from RUST_LOG-style specification.
+1. **`trace` maps to Python's `DEBUG` level**: 
+   - **Why it's this way**: Python has no TRACE level in stdlib, DEBUG is the lowest available
+   - **Common mistake**: Expecting a separate trace level
+   - **Correct approach**: Use DEBUG for most verbose logging, or extend logging module yourself
 
-**Parameters**:
-- `log_spec`: Explicit specification (overrides env_var)
-- `env_var`: Environment variable name (default: 'PTHN_LOG')
-- `log_format`: Custom log message format
-- `date_format`: Custom date format
-- `force`: Force reconfiguration if already configured
+2. **Second `init()` call does nothing**:
+   - **Why**: Prevents accidental reconfiguration from library code
+   - **Watch out for**: Tests that call `init()` multiple times - use `reset()` between tests
+   - **Correct approach**: Call `reset()` first or use `init(force=True)`
 
-**Behavior**:
-- First call: Configures logging
-- Subsequent calls: No-op (unless `force=True`)
-- Reads from environment if `log_spec` not provided
-- Falls back to 'warning' if no spec found
-
-### `envlog.reset()`
-```python
-def reset() -> None
-```
-
-**Purpose**: Reset configuration state without modifying actual logging config.
-
-**Use Case**: Allow re-calling `init()` without `force=True`.
-
-### `envlog.parse_log_spec()`
-```python
-def parse_log_spec(spec: str) -> LogSpec
-```
-
-**Purpose**: Parse specification string into structured object.
-
-**Use Cases**: Testing, validation, introspection.
+3. **Module names use dots, not double colons**:
+   - **Why**: Python uses `myapp.core`, Rust uses `myapp::core`
+   - **Pattern**: Parser converts `::` to `.` automatically
+   - **Both syntaxes work**: `PTHN_LOG=myapp::core=debug` and `PTHN_LOG=myapp.core=debug` are equivalent
 
 ---
 
-## Testing
+## Architecture Decisions
 
-### Test Suite Structure
+**Why parse-then-build instead of direct translation?**
+- **Trade-off**: Extra data structure (`LogSpec`) in the middle adds code but enables testing parser in isolation
+- **Alternative considered**: Single function that reads env var and calls `dictConfig()` directly
+- **Implications**: Can test parsing without affecting global logging state, can reuse parser for other purposes (e.g., validation tool)
 
-**37 tests total, 97% coverage (2 uncovered lines)**
+**Why `PTHN_LOG` instead of `RUST_LOG`?**
+- **Reason**: Avoid confusion when Python and Rust apps run in same environment
+- **Context**: If Python app uses `RUST_LOG`, actual Rust processes can't distinguish their own config
+- **Alternative**: Could add env var name as parameter (we do: `init(env_var='...')`)
 
-#### `tests/test_parser.py` (18 tests)
-Tests for `envlog.parser` module:
-- `TestNormalizeLevel`: Level name normalization (4 tests)
-- `TestParseLogSpec`: Specification parsing (14 tests)
-  - Valid syntax variations
-  - Error conditions (invalid levels, modules, syntax)
-  - Rust-style separators
-  - Whitespace handling
-
-#### `tests/test_config.py` (13 tests)
-Tests for `envlog.config` module:
-- `TestBuildDictConfig`: dictConfig generation (3 tests)
-- `TestInit`: Initialization behavior (10 tests)
-  - Environment variable reading
-  - Explicit spec overrides
-  - Custom env var names
-  - Double-init prevention
-  - Force reconfiguration
-  - Reset functionality
-
-#### `tests/test_integration.py` (6 tests)
-End-to-end integration tests:
-- Full logging pipeline
-- Module-specific level application
-- Hierarchical logger behavior
-- Multiple module configurations
-
-### Running Tests
-
-```bash
-# All tests
-pytest tests/
-
-# With coverage
-pytest tests/ --cov=envlog --cov-report=term-missing
-
-# Specific test file
-pytest tests/test_parser.py
-
-# Specific test
-pytest tests/test_parser.py::TestParseLogSpec::test_default_level_only
-
-# Quiet mode
-pytest tests/ -q
-```
-
-### Coverage Report
-Current: 97% (79 statements, 2 missed)
-- Missed lines: `parser.py:49, 110` (edge cases in error messages)
+**Why dictConfig instead of programmatic logger creation?**
+- **Trade-off**: dictConfig is more complex but is Python's standard approach
+- **Alternative considered**: Manually call `logger.setLevel()` on each logger
+- **Why dictConfig wins**: Matches how Python ecosystem expects logging configuration, handles edge cases (existing loggers, handlers, formatters)
 
 ---
 
-## Development Workflow
+## Key Patterns & Abstractions
 
-### Setup
+**Pattern 1: Pure Parsing**
+- **Used for**: All syntax parsing and validation
+- **Structure**: Input string → regex matching → validation → immutable data structure
+- **Examples in code**: `normalize_level()`, `parse_log_spec()` - no state, no I/O, pure transformation
 
-```bash
-# Clone repository
-git clone https://github.com/bassmanitram/python-envlog.git
-cd python-envlog
+**Pattern 2: Guarded Side Effects**
+- **Used for**: Applying configuration to global logging state
+- **Why not direct application**: Need to prevent accidental double-configuration
+- **Structure**: Check `_configured` flag → read source → parse → build → apply → set flag
 
-# Create virtual environment
-python3 -m venv .venv
-source .venv/bin/activate
-
-# Install in editable mode with dev dependencies
-pip install -e ".[dev,test]"
-
-# Install pre-commit hooks
-pre-commit install
-```
-
-### Code Quality Tools
-
-**Black** (code formatting):
-```bash
-black envlog/ tests/
-black --check envlog/ tests/  # Check only
-```
-- Line length: 100
-- Target: Python 3.8+
-
-**isort** (import sorting):
-```bash
-isort envlog/ tests/
-isort --check-only envlog/ tests/  # Check only
-```
-- Profile: black
-- Line length: 100
-
-**mypy** (type checking):
-```bash
-mypy envlog/
-```
-- Python version: 3.10
-- Strict: No (relaxed for flexibility)
-- Ignore missing imports: Yes
-
-**flake8** (linting):
-```bash
-flake8 envlog/ tests/ --max-line-length=100 --extend-ignore=E203,W503
-```
-
-**bandit** (security):
-```bash
-bandit -r envlog/
-```
-
-**pre-commit** (all hooks):
-```bash
-pre-commit run --all-files
-```
-
-### Pre-commit Hooks
-Located in `.pre-commit-config.yaml`:
-1. trailing-whitespace
-2. end-of-file-fixer
-3. check-yaml, check-toml, check-json
-4. check-added-large-files
-5. check-merge-conflict
-6. debug-statements
-7. check-docstring-first
-8. black
-9. isort
-10. flake8
-
-### Building Package
-
-```bash
-# Build distributions
-python -m build
-
-# Check package metadata
-twine check dist/*
-
-# Install locally
-pip install dist/envlog-0.1.0-py3-none-any.whl
-```
+**Anti-pattern to avoid: Mixing parsing and application**
+- **Don't do this**: Calling `logging.config.dictConfig()` inside `parse_log_spec()`
+- **Why it fails**: Makes parsing untestable, couples syntax to logging implementation
+- **Instead**: Keep parser pure, apply configuration in separate function
 
 ---
 
-## CI/CD Pipeline
+## State & Data Flow
 
-### GitHub Actions Workflows
+**State management**:
+- **Persistent state**: None (logs go to stderr, not persisted by library)
+- **Runtime state**: Single module-level boolean `_configured` in `config.py`
+- **No state here**: `parser.py` - completely stateless, all functions are pure
 
-#### 1. **test.yml** (Multi-platform testing)
-- **Trigger**: Push/PR to main, develop, feature branches
-- **Matrix**: 
-  - OS: Ubuntu, Windows, macOS
-  - Python: 3.8, 3.9, 3.10, 3.11, 3.12
-- **Steps**: Install deps, run pytest with coverage
-- **Total combinations**: 15 (3 OS × 5 Python versions)
-
-#### 2. **lint.yml** (Code quality)
-- **Trigger**: Push/PR to main, develop, feature branches
-- **Python**: 3.10 on Ubuntu
-- **Steps**: black, isort, mypy, package metadata check
-
-#### 3. **quality.yml** (Comprehensive quality)
-- **Trigger**: Push/PR to main, develop, feature branches
-- **Steps**: 
-  - Pre-commit hooks
-  - Bandit security scan (report artifact)
-  - Package build validation
-  - Installation test
-
-#### 4. **examples.yml** (Example validation)
-- **Trigger**: Push/PR to main, develop, feature branches
-- **Matrix**: Python 3.8, 3.10, 3.12
-- **Tests**:
-  - Basic usage: `PTHN_LOG=debug; envlog.init()`
-  - Logger configuration: Module-specific levels
-- **Important**: Uses `envlog.init()` (NOT `envlog.configure()`)
-
-#### 5. **docs.yml** (Documentation validation)
-- **Trigger**: Push to main (paths: README.md, CHANGELOG.md, envlog/**)
-- **Steps**:
-  - Check required files exist
-  - Test README examples
-  - Validate documentation links
-
-#### 6. **dependencies.yml** (Dependency management)
-- **Trigger**: Weekly (Monday 9am UTC) + manual
-- **Steps**:
-  - Safety security vulnerability check
-  - List outdated dependencies
-  - Test with latest dependencies
-
-#### 7. **status.yml** (Daily health check)
-- **Trigger**: Daily (8am UTC) + manual
-- **Steps**:
-  - Full test suite
-  - Code quality checks
-  - Package health validation
-  - Generate status report (artifact)
-
-#### 8. **release.yml** (PyPI publishing)
-- **Trigger**: Version tag push (v*)
-- **Environment**: release
-- **Steps**:
-  - Extract version from tag
-  - Generate changelog from commits
-  - Build package
-  - Create GitHub release
-  - Publish to PyPI (trusted publishing)
-- **Requirements**: Configure PyPI trusted publishing
-
-### Running CI Checks Locally
-
-```bash
-# Simulate lint workflow
-black --check envlog/ tests/
-isort --check-only envlog/ tests/
-mypy envlog/
-python -m build
-twine check dist/*
-
-# Simulate test workflow
-pytest tests/ --cov=envlog --cov-report=term-missing
-
-# Simulate quality workflow
-pre-commit run --all-files
-bandit -r envlog/
-pip install dist/*.whl
-python -c "import envlog; print('Package installed successfully')"
-
-# Simulate examples workflow
-python -c "
-import logging
-import envlog
-import os
-os.environ['PTHN_LOG'] = 'debug'
-envlog.init()
-logger = logging.getLogger('test')
-logger.debug('Debug message')
-print('✓ Basic usage works')
-"
+**Data flow**:
 ```
+Env var or string → parse_log_spec() → LogSpec object → build_dict_config() → dict
+                                                                ↓
+                                                          logging.config.dictConfig()
+                                                                ↓
+                                                    Global logging configuration
+```
+
+**Critical paths**: The flow must preserve purity until the final `dictConfig()` call - any impurity breaks testability.
 
 ---
 
-## Dependencies
+## Integration Points
 
-### Runtime Dependencies
-**None** - Pure stdlib implementation
+**This project depends on** (upstream):
+- **Python stdlib logging**: Core functionality, tightly coupled (irreplaceable)
+- **Python stdlib re**: Regex parsing, loosely coupled (could replace with manual parsing)
 
-### Development Dependencies
-From `pyproject.toml`:
-```toml
-test = [
-    "pytest>=6.0",
-    "pytest-cov>=3.0.0",
-]
-dev = [
-    "black>=22.0.0",
-    "isort>=5.0.0",
-    "flake8>=4.0.0",
-    "mypy>=0.991",
-    "build>=0.8.0",
-    "twine>=4.0.0",
-    "pre-commit>=3.0.0",
-    "bandit>=1.7.0",
-    "safety>=2.0.0",
-]
-```
+**Projects that depend on this** (downstream):
+- **yacba**: Uses envlog for CLI logging configuration
+- **Your Python apps**: Direct dependency via `pip install envlog`
 
-### Python Version Support
-- **Minimum**: Python 3.8
-- **Tested**: 3.8, 3.9, 3.10, 3.11, 3.12
-- **Platforms**: Linux, Windows, macOS
+**Related projects** (siblings):
+- **profile-config**: Similar philosophy (environment-based configuration) for app config
+- **dataclass-args**: Complementary (CLI args) vs envlog (logging config)
 
 ---
 
-## Common Use Cases
+## Configuration Philosophy
 
-### 1. Basic Application Logging
-```python
-import logging
-import envlog
+**What's configurable**: Log levels (global and per-module), log format, date format, environment variable name
 
-envlog.init()
-logger = logging.getLogger(__name__)
-logger.info("Application started")
-```
-```bash
-PTHN_LOG=info python app.py
-```
+**What's hardcoded**: 
+- Handler type (always StreamHandler to stderr)
+- Level name mappings (LEVEL_MAP in parser.py)
+- Basic architecture (always parse → build → apply)
 
-### 2. Quiet Third-Party Libraries
-```python
-import logging
-import envlog
+**Configuration sources** (in precedence order):
+1. `log_spec` parameter to `init()` - Explicit override
+2. Environment variable (default `PTHN_LOG`) - Standard usage
+3. Hardcoded `'warning'` - Fallback if nothing specified
 
-envlog.init()  # Reads PTHN_LOG
-logger = logging.getLogger("myapp")
-logger.debug("My app debug message")
-```
-```bash
-PTHN_LOG=warn,myapp=debug python app.py
-```
-Only your app's debug messages show; third-party libraries at WARNING.
-
-### 3. Module-Specific Debugging
-```python
-import logging
-import envlog
-
-envlog.init()
-core_logger = logging.getLogger("myapp.core")
-db_logger = logging.getLogger("myapp.database")
-```
-```bash
-PTHN_LOG=warn,myapp.database=debug python app.py
-```
-Only database module logs debug messages.
-
-### 4. Production Configuration
-```python
-envlog.init(log_spec='error')  # Override environment
-```
-All logs at ERROR level or above, regardless of environment variable.
-
-### 5. Testing with Different Configs
-```python
-def test_logging_info():
-    envlog.reset()
-    envlog.init(log_spec='info')
-    # Test with info level
-
-def test_logging_debug():
-    envlog.reset()
-    envlog.init(log_spec='debug')
-    # Test with debug level
-```
+**The trap**: Calling `init()` after creating loggers - they may not pick up the configuration if they've already cached their level. Solution: Call `init()` first thing in your app's entry point.
 
 ---
 
-## Troubleshooting Guide
+## Testing Strategy
 
-### Issue: Nothing is logging
-**Cause**: Log level too high or handlers not configured
-**Solution**:
-```python
-import logging
-logger = logging.getLogger(__name__)
-print(f"Effective level: {logger.getEffectiveLevel()}")  # Check level
-envlog.init(log_spec='debug', force=True)  # Force reconfigure
-```
+**What we test**:
+- **Parser correctness**: All syntax variations, error cases, level normalization
+- **Config building**: dictConfig structure, handler setup, logger hierarchy
+- **Integration**: Full pipeline from env var to actual logging output
 
-### Issue: Too much output from libraries
-**Cause**: Default level too low
-**Solution**:
-```bash
-PTHN_LOG=error,myapp=info  # High default, low for your app
-```
+**What we don't test**:
+- **Python's logging module internals**: Assume stdlib works correctly
+- **Performance**: Parsing is fast enough, not a bottleneck
 
-### Issue: Can't reconfigure logging
-**Cause**: `init()` already called without `force=True`
-**Solution**:
-```python
-envlog.reset()      # Option 1: Reset then init
-envlog.init(...)
+**Test organization**: Tests mirror code structure (test_parser.py, test_config.py) plus integration tests. See `tests/test_integration.py` for full pipeline examples.
 
-envlog.init(force=True, ...)  # Option 2: Force reconfigure
-```
-
-### Issue: Module-specific config not working
-**Cause**: Module name mismatch or logger not created
-**Solution**:
-```python
-# Ensure module name matches
-import logging
-logger = logging.getLogger("myapp.database")  # Exact match required
-print(logger.name)  # Verify name
-```
-
-### Issue: Tests interfering with each other
-**Cause**: Global logging configuration persists
-**Solution**:
-```python
-import pytest
-from envlog import reset
-
-@pytest.fixture(autouse=True)
-def reset_logging():
-    reset()
-    yield
-    reset()
-```
+**Mocking strategy**: No mocks for parser (pure functions), minimal mocking for config (only when simulating specific logging module edge cases)
 
 ---
 
-## Design Decisions & Rationale
+## Common Problems & Diagnostic Paths
 
-### Why environment variables?
-- 12-factor app methodology
-- No code changes for different environments
-- Familiar to operations/DevOps teams
-- Works with containers, CI/CD, systemd
+**Symptom**: Logging output doesn't appear
+- **Most likely cause**: Log level is set too high (e.g., WARNING when you're logging INFO)
+- **Check**: Print `logging.getLogger('yourmodule').getEffectiveLevel()` - should be 10 for DEBUG, 20 for INFO, 30 for WARNING
+- **Fix**: Lower the level - `PTHN_LOG=debug` or `PTHN_LOG=info,yourmodule=debug`
 
-### Why RUST_LOG syntax?
-- Proven design from Rust ecosystem
-- Concise and readable
-- Hierarchical module support
-- Balance of simplicity and power
+**Symptom**: Configuration doesn't apply when I call `init()` twice
+- **Likely cause**: `_configured` flag prevents second configuration
+- **Diagnostic**: Check if `init()` is being called from multiple places (library code and your code)
+- **Solution approach**: Call `reset()` first, or use `init(force=True)`, or only call `init()` once at app startup
 
-### Why `PTHN_LOG` instead of `RUST_LOG`?
-- Avoid confusion with actual Rust applications
-- Clear Python-specific identifier
-- Follows similar naming pattern
-
-### Why `trace` maps to `DEBUG`?
-- Python has no TRACE level in stdlib
-- Rust's trace is more verbose than debug
-- DEBUG is Python's lowest standard level
-- Users wanting trace behavior get Python's most verbose option
-
-### Why default to `WARNING`?
-- Python logging default
-- Prevents overwhelming output
-- Encourages explicit configuration
-- Matches stdlib behavior
-
-### Why `disable_existing_loggers: False`?
-- Non-destructive configuration
-- Works with libraries that configure logging before app startup
-- Allows incremental adoption
-- Safer default behavior
-
-### Why `force` parameter?
-- Prevent accidental double-initialization
-- Allow explicit reconfiguration when needed
-- Help catch configuration mistakes
-- Support testing scenarios
+**Symptom**: Module-specific config not working (e.g., `PTHN_LOG=warn,myapp=debug` but myapp still at WARN)
+- **Why it happens**: Logger name doesn't match - maybe logger is "myapp.module" but you specified "myapp"
+- **Diagnostic**: Print `logging.getLogger(__name__).name` to see actual logger name
+- **Prevention**: Use hierarchical names - `myapp=debug` applies to `myapp` and all children like `myapp.core`, `myapp.util`
 
 ---
 
-## Project Conventions
+## Modification Patterns
 
-### Code Style
-- Line length: 100 characters
-- String quotes: Double quotes preferred by black
-- Import order: stdlib → third-party → local (isort)
-- Type hints: Encouraged but not required (relaxed mypy)
+**To add new log level mapping** (e.g., support "verbose"):
+1. Add entry to `LEVEL_MAP` in `parser.py` - maps your name to Python level name
+2. Add test case in `tests/test_parser.py::TestNormalizeLevel` - verify mapping works
+3. Document in README.md - users need to know it's supported
 
-### Naming Conventions
-- Functions/methods: `snake_case`
-- Classes: `PascalCase`
-- Constants: `UPPER_SNAKE_CASE`
-- Private: Leading underscore `_private`
-- Module names: Lowercase, no underscores
+**To change configuration behavior** (e.g., log to file instead of stderr):
+1. Modify `config.py::build_dict_config()` - change handler configuration
+2. Update tests in `tests/test_config.py` - verify new handler is created
+3. Update tests in `tests/test_integration.py` - verify logging output goes to new destination
+4. **Consider**: This might break "zero dependencies" invariant if you need file rotation libraries
 
-### Docstring Format
-- Module docstrings: Overview and syntax examples
-- Function docstrings: Args, Returns, Raises, Examples
-- Class docstrings: Purpose and attributes
-- Format: Google style (informal)
-
-### Test Organization
-- Test files: `test_<module>.py`
-- Test classes: `Test<FunctionOrClass>`
-- Test functions: `test_<behavior>`
-- Fixtures: Minimal, prefer direct instantiation
-
-### Commit Messages
-- Present tense: "Fix bug" not "Fixed bug"
-- Lowercase: "fix flake8 args" not "Fix Flake8 Args"
-- Concise: < 72 characters preferred
-- No issue refs (small project)
-
-### Version Strategy
-- Semantic versioning: MAJOR.MINOR.PATCH
-- Current: 0.1.0 (Beta)
-- Tag format: `v0.1.0`
-- CHANGELOG.md updated per release
+**To support new syntax** (e.g., allow level ranges like "debug..warn"):
+1. Modify regex in `parser.py::parse_log_spec()` - parse the new syntax
+2. Add validation logic - ensure the range is valid
+3. Update `LogSpec` dataclass if needed - store the range information
+4. Add comprehensive tests in `tests/test_parser.py` - cover all edge cases
+5. Update README.md examples - show users how to use it
 
 ---
 
-## Files of Note
+## When to Update This Document
 
-### Configuration Files
-- **`pyproject.toml`**: Single source of truth for project metadata, dependencies, and tool configuration
-- **`.pre-commit-config.yaml`**: Pre-commit hook definitions
-- **`.gitignore`**: Excludes .venv, dist, build, __pycache__, *.egg-info, coverage reports
+Update this bootstrap when:
+- [x] Core architecture changes (e.g., add file handler support, multi-stage parsing)
+- [x] New critical invariant added (e.g., thread-safety requirement)
+- [x] Major dependency added/removed (currently zero, would be major change)
+- [x] Integration points change (e.g., new project depends on this)
+- [x] Testing strategy shifts (e.g., add property-based testing)
 
-### Documentation Files
-- **`README.md`**: Comprehensive user documentation with examples
-- **`GETTING_STARTED.md`**: Quick start guide for new users
-- **`CHANGELOG.md`**: Version history (currently minimal)
-- **`.github/README_ACTIONS.md`**: GitHub Actions workflow documentation
-
-### Build Files
-- **`setup.py`**: Minimal shim for editable installs (115 lines)
-- **`pyproject.toml`**: Modern build configuration (PEP 621)
-- **`envlog/py.typed`**: PEP 561 type hint marker (empty file)
-
-### Example Files
-- **`example.py`**: Runnable example demonstrating all features (1318 bytes)
+Don't update for:
+- ❌ Feature additions like new level mappings (pure extension, no architectural change)
+- ❌ Bug fixes in parser or config builder
+- ❌ Refactoring that preserves interfaces
+- ❌ Test additions
+- ❌ Documentation/README updates
 
 ---
 
-## Key Insights for Future Development
-
-### Architecture Strengths
-1. **Clean separation**: Parser and config builder are independent
-2. **Testable**: Pure functions, no I/O in core logic
-3. **Extensible**: Easy to add new log levels or syntax
-4. **Minimal surface area**: Only 3 public functions
-
-### Potential Extension Points
-1. **Custom handlers**: Currently hardcoded to StreamHandler
-2. **Config file support**: Could read from JSON/YAML/TOML
-3. **Hot reload**: Watch environment for changes
-4. **Logging to files**: Currently stderr only
-5. **Advanced filtering**: More than just level control
-6. **Multiple handlers**: Currently single handler per logger
-
-### Testing Gaps (Future Improvements)
-1. Windows path handling (tested via CI but not explicitly)
-2. Unicode in module names
-3. Very long module hierarchies (10+ levels)
-4. Concurrent initialization from multiple threads
-5. Integration with logging.basicConfig()
-
-### Known Limitations
-1. No log rotation (use external tools)
-2. No structured logging (use external formatters)
-3. Single handler architecture
-4. No runtime reconfiguration without `force=True`
-5. Environment variables only (no config files)
-
-### Maintenance Notes
-1. **Coverage target**: 95%+ (currently 97%)
-2. **Test count**: Keep < 50 (currently 37)
-3. **Code size**: Keep < 500 lines (currently 289)
-4. **Dependencies**: Maintain zero runtime dependencies
-5. **Python support**: Follow NEP 29 (24 months after release)
-
----
-
-## Quick Reference Commands
-
-```bash
-# Development setup
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev,test]"
-pre-commit install
-
-# Run tests
-pytest tests/ -v
-pytest tests/ --cov=envlog --cov-report=html
-
-# Code quality
-black envlog/ tests/
-isort envlog/ tests/
-mypy envlog/
-flake8 envlog/ tests/ --max-line-length=100 --extend-ignore=E203,W503
-bandit -r envlog/
-pre-commit run --all-files
-
-# Build and check
-python -m build
-twine check dist/*
-pip install dist/*.whl
-
-# Example usage
-PTHN_LOG=debug python example.py
-PTHN_LOG=warn,myapp=debug python example.py
-
-# Git workflow
-git status
-git log --oneline -10
-git diff
-
-# Find files (avoid .venv)
-find . -name "*.py" | grep -v ".venv" | grep -v "__pycache__"
-```
-
----
-
-## Important Git Information
-
-- **Branch**: main
-- **Remote**: origin (https://github.com/bassmanitram/python-envlog.git)
-- **Last tag**: v0.1.0
-- **Recent commits**:
-  - Fix flake8 args
-  - fix pre-commit
-  - Readme cleanup
-  - Fix examples
-  - GH Actions homogenization
-  - Fix badges and URLs
-
----
-
-## Contact & Resources
-
-- **Author**: Martin Bartlett (martin.j.bartlett@gmail.com)
-- **License**: MIT
-- **Repository**: https://github.com/bassmanitram/python-envlog
-- **Issues**: https://github.com/bassmanitram/python-envlog/issues
-- **PyPI**: https://pypi.org/project/envlog/ (when published)
-
----
-
-## Summary for AI Agents
-
-This is a **small, focused Python library** (289 lines of code) that provides environment variable-based logging configuration using Rust's RUST_LOG syntax. The codebase is **well-tested** (37 tests, 97% coverage), **well-documented**, and follows **modern Python practices**.
-
-**When working on this project**:
-1. Run tests after every change: `pytest tests/`
-2. Use pre-commit hooks: `pre-commit run --all-files`
-3. Maintain 95%+ coverage
-4. Keep code simple and stdlib-only
-5. Update documentation for API changes
-6. Avoid `.venv/` directory in searches
-
-**Core files to understand**:
-- `envlog/parser.py` - Syntax parsing
-- `envlog/config.py` - Configuration building
-- `tests/` - Comprehensive test coverage
-
-**Architecture**: Parser → Config Builder → stdlib logging.config.dictConfig
-
-This document should provide sufficient context to work on the project in future sessions without needing to re-explore the codebase.
+**Last Updated**: 2025-12-03  
+**Last Architectural Change**: Initial architecture established (v0.1.0)
