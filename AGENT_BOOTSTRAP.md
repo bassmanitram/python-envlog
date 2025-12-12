@@ -1,8 +1,8 @@
 # envlog - Agent Bootstrap
 
-**Purpose**: Configure Python logging via environment variables using Rust's RUST_LOG syntax  
-**Type**: Library  
-**Language**: Python 3.8+  
+**Purpose**: Configure Python logging via environment variables using Rust's RUST_LOG syntax
+**Type**: Library
+**Language**: Python 3.8+
 **Repository**: https://github.com/bassmanitram/python-envlog
 
 ---
@@ -79,7 +79,7 @@ These rules MUST be maintained:
 
 Things that surprise people:
 
-1. **`trace` maps to Python's `DEBUG` level**: 
+1. **`trace` maps to Python's `DEBUG` level**:
    - **Why it's this way**: Python has no TRACE level in stdlib, DEBUG is the lowest available
    - **Common mistake**: Expecting a separate trace level
    - **Correct approach**: Use DEBUG for most verbose logging, or extend logging module yourself
@@ -174,7 +174,7 @@ Env var or string → parse_log_spec() → LogSpec object → build_dict_config(
 
 **What's configurable**: Log levels (global and per-module), log format, date format, environment variable name
 
-**What's hardcoded**: 
+**What's hardcoded**:
 - Handler type (always StreamHandler to stderr)
 - Level name mappings (LEVEL_MAP in parser.py)
 - Basic architecture (always parse → build → apply)
@@ -264,5 +264,5 @@ Don't update for:
 
 ---
 
-**Last Updated**: 2025-12-03  
+**Last Updated**: 2025-12-03
 **Last Architectural Change**: Initial architecture established (v0.1.0)
