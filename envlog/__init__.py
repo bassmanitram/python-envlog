@@ -8,5 +8,5 @@ environment variables with Rust's RUST_LOG syntax (via PTHN_LOG by default).
 from envlog.config import init, reset
 from envlog.parser import parse_log_spec
 
-__version__ = "0.1.0"
+__version__ = "1.0.0"
 __all__ = ["init", "reset", "parse_log_spec"]
